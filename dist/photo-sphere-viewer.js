@@ -7,21 +7,23 @@
 
 (function(root, factory) {
   if (typeof define === 'function' && define.amd) {
-    define(['three', 'D.js'], factory);
+    define(['three', 'D.js', 'uevent'], factory);
   }
   else if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('three'), require('d.js'));
+    module.exports = factory(require('three'), require('d.js'), require('uevent'));
   }
   else {
-    root.PhotoSphereViewer = factory(root.THREE, root.D);
+    root.PhotoSphereViewer = factory(root.THREE, root.D, root.uEvent);
   }
-}(this, function(THREE, D) {
+}(this, function(THREE, D, uEvent) {
 "use strict";
 
 /**
  * Static utilities for PSV
  */
 var PSVUtils = {};
+
+PhotoSphereViewer.Utils = PSVUtils;
 
 PSVUtils.TwoPI = Math.PI * 2.0;
 PSVUtils.HalfPI = Math.PI / 2.0;
@@ -87,7 +89,7 @@ PSVUtils.isWebGLSupported = function() {
 };
 
 /**
- * Get max texture width in WebGL context
+ * Gets max texture width in WebGL context
  * @return (int)
  */
 PSVUtils.getMaxTextureWidth = function() {
@@ -96,10 +98,10 @@ PSVUtils.getMaxTextureWidth = function() {
 };
 
 /**
- * Toggle a CSS class
- * @param element
- * @param className
- * @param active
+ * Toggles a CSS class
+ * @param element (HTMLElement)
+ * @param className (String)
+ * @param active (boolean,optional) forced state
  */
 PSVUtils.toggleClass = function(element, className, active) {
   if (active === undefined) {
@@ -111,6 +113,34 @@ PSVUtils.toggleClass = function(element, className, active) {
   else if (!active) {
     element.classList.remove(className);
   }
+};
+
+/**
+ * Adds one or several CSS classes to an element
+ * @param element (HTMLElement)
+ * @param className (String)
+ */
+PSVUtils.addClasses = function(element, className) {
+  if (!className) {
+    return;
+  }
+  className.split(' ').forEach(function(name) {
+    element.classList.add(name);
+  });
+};
+
+/**
+ * Removes one or several CSS classes to an element
+ * @param element (HTMLElement)
+ * @param className (String)
+ */
+PSVUtils.removeClasses = function(element, className) {
+  if (!className) {
+    return;
+  }
+  className.split(' ').forEach(function(name) {
+    element.classList.remove(name);
+  });
 };
 
 /**
@@ -246,7 +276,7 @@ PSVUtils.getStyle = function(elt, prop) {
 /**
  * Translate CSS values like "top center" or "10% 50%" as top and left positions
  * The implementation is as close as possible to the "background-position" specification
- * https://developer.mozilla.org/en-US/docs/Web/CSS/background-position
+ * @link https://developer.mozilla.org/en-US/docs/Web/CSS/background-position
  * @param value (String)
  * @return Object ({top: double: left: double})
  */
@@ -390,7 +420,7 @@ PSVUtils.parseAngle = function(angle, reference) {
       angle = PSVUtils.TwoPI + angle;
     }
 
-    angle+= reference;
+    angle += reference;
   }
 
   return angle;
@@ -405,6 +435,7 @@ PSVUtils.parseAngle = function(angle, reference) {
  *    - easing (string|function, optional)
  *    - onTick (function(properties))
  *    - onCancel (function)
+ *    - onDone (function)
  * @returns (D.promise) with an additional "cancel" method
  */
 PSVUtils.animation = function(options) {
@@ -449,6 +480,10 @@ PSVUtils.animation = function(options) {
 
       options.onTick(current, 1.0);
 
+      if (options.onDone) {
+        options.onDone();
+      }
+
       defer.resolve();
     }
   }
@@ -467,70 +502,48 @@ PSVUtils.animation = function(options) {
   promise.cancel = function() {
     if (options.onCancel) {
       options.onCancel();
-      defer.reject(defer);
     }
+    defer.reject();
   };
   return promise;
 };
 
 /**
  * Collection of easing functions
- * https://gist.github.com/frederickk/6165768
+ * @link https://gist.github.com/frederickk/6165768
  */
 // @formatter:off
 // jscs:disable
 /* jshint ignore:start */
 PSVUtils.animation.easings = {
-  // no easing, no acceleration
   linear: function(t) { return t; },
 
-  // accelerating from zero velocity
   inQuad: function(t) { return t*t; },
-  // decelerating to zero velocity
   outQuad: function(t) { return t*(2-t); },
-  // acceleration until halfway, then deceleration
   inOutQuad: function(t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t; },
 
-  // accelerating from zero velocity
   inCubic: function(t) { return t*t*t; },
-  // decelerating to zero velocity
   outCubic: function(t) { return (--t)*t*t+1; },
-  // acceleration until halfway, then deceleration
   inOutCubic: function(t) { return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1; },
 
-  // accelerating from zero velocity
   inQuart: function(t) { return t*t*t*t; },
-  // decelerating to zero velocity
   outQuart: function(t) { return 1-(--t)*t*t*t; },
-  // acceleration until halfway, then deceleration
   inOutQuart: function(t) { return t<.5 ? 8*t*t*t*t : 1-8*(--t)*t*t*t; },
 
-  // accelerating from zero velocity
   inQuint: function(t) { return t*t*t*t*t; },
-  // decelerating to zero velocity
   outQuint: function(t) { return 1+(--t)*t*t*t*t; },
-  // acceleration until halfway, then deceleration
   inOutQuint: function(t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t; },
 
-  // accelerating from zero velocity
   inSine: function(t) { return 1-Math.cos(t*(Math.PI/2)); },
-  // decelerating to zero velocity
   outSine: function(t) { return Math.sin(t*(Math.PI/2)); },
-  // accelerating until halfway, then decelerating
   inOutSine: function(t) { return .5-.5*Math.cos(Math.PI*t); },
 
-  // accelerating from zero velocity
   inExpo: function(t) { return Math.pow(2, 10*(t-1)); },
-  // decelerating to zero velocity
   outExpo: function(t) { return 1-Math.pow(2, -10*t); },
-  // accelerating until halfway, then decelerating
   inOutExpo: function(t) { t=t*2-1; return t<0 ? .5*Math.pow(2, 10*t) : 1-.5*Math.pow(2, -10*t); },
 
-  // accelerating from zero velocity
   inCirc: function(t) { return 1-Math.sqrt(1-t*t); },
-  // decelerating to zero velocity
   outCirc: function(t) { t--; return Math.sqrt(1-t*t); },
-  // acceleration until halfway, then deceleration
   inOutCirc: function(t) { t*=2; return t<1 ? .5-.5*Math.sqrt(1-t*t) : .5+.5*Math.sqrt(1-(t-=2)*t); }
 };
 // jscs:enable
@@ -577,53 +590,81 @@ PSVUtils.throttle = function(func, wait) {
 };
 
 /**
+ *  Function to test if an object is a plain object, i.e. is constructed
+ *  by the built-in Object constructor and inherits directly from Object.prototype
+ *  or null. Some built-in objects pass the test, e.g. Math which is a plain object
+ *  and some host or exotic objects may pass also.
+ *  @link http://stackoverflow.com/a/5878101/1207670
+ *  @param {} obj - value to test
+ *  @returns {Boolean} true if passes tests, false otherwise
+ */
+PSVUtils.isPlainObject = function(obj) {
+  // Basic check for Type object that's not null
+  if (typeof obj == 'object' && obj !== null) {
+    // If Object.getPrototypeOf supported, use it
+    if (typeof Object.getPrototypeOf == 'function') {
+      var proto = Object.getPrototypeOf(obj);
+      return proto === Object.prototype || proto === null;
+    }
+
+    // Otherwise, use internal class
+    // This should be reliable as if getPrototypeOf not supported, is pre-ES5
+    return Object.prototype.toString.call(obj) == '[object Object]';
+  }
+
+  // Not an object
+  return false;
+};
+
+/**
  * Merge the enumerable attributes of two objects.
  * Modified to replace arrays instead of merge.
+ * Modified to alter the target object.
  * @copyright Nicholas Fisher <nfisher110@gmail.com>"
  * @license MIT
  * @param target (Object)
  * @param src (Object)
- * @return (Object)
+ * @return target (Object)
  */
 PSVUtils.deepmerge = function(target, src) {
-  var array = Array.isArray(src);
-  var dst = array && [] || {};
+  var first = src;
 
-  if (array) {
-    src.forEach(function(e, i) {
-      if (typeof dst[i] === 'undefined') {
-        dst[i] = e;
+  return (function merge(target, src) {
+    if (Array.isArray(src)) {
+      if (!target || !Array.isArray(target)) {
+        target = [];
       }
       else {
-        dst[i] = PSVUtils.deepmerge(null, e);
+        target.length = 0;
       }
-    });
-  }
-  else {
-    if (target && Array.isArray(target)) {
-      target = undefined;
-    }
-    if (target && typeof target === 'object') {
-      Object.keys(target).forEach(function(key) {
-        dst[key] = target[key];
+      src.forEach(function(e, i) {
+        target[i] = merge(null, e);
       });
     }
-    Object.keys(src).forEach(function(key) {
-      if (typeof src[key] !== 'object' || !src[key]) {
-        dst[key] = src[key];
+    else if (typeof src == 'object') {
+      if (!target || Array.isArray(target)) {
+        target = {};
       }
-      else {
-        if (!target[key]) {
-          dst[key] = src[key];
+      Object.keys(src).forEach(function(key) {
+        if (typeof src[key] != 'object' || !src[key] || !PSVUtils.isPlainObject(src[key])) {
+          target[key] = src[key];
         }
-        else {
-          dst[key] = PSVUtils.deepmerge(target[key], src[key]);
+        else if (src[key] != first) {
+          if (!target[key]) {
+            target[key] = merge(null, src[key]);
+          }
+          else {
+            merge(target[key], src[key]);
+          }
         }
-      }
-    });
-  }
+      });
+    }
+    else {
+      target = src;
+    }
 
-  return dst;
+    return target;
+  }(target, src));
 };
 
 /**
@@ -632,7 +673,7 @@ PSVUtils.deepmerge = function(target, src) {
  * @return (Object)
  */
 PSVUtils.clone = function(src) {
-  return PSVUtils.deepmerge(Array.isArray(src) ? [] : {}, src);
+  return PSVUtils.deepmerge(null, src);
 };
 
 
@@ -649,37 +690,16 @@ function PhotoSphereViewer(options) {
     PhotoSphereViewer.loadSystem();
   }
 
-  this.config = PSVUtils.deepmerge(PhotoSphereViewer.DEFAULTS, options);
+  this.config = PSVUtils.clone(PhotoSphereViewer.DEFAULTS);
+  PSVUtils.deepmerge(this.config, options);
 
-  // normalize config
-  this.config.min_fov = PSVUtils.stayBetween(this.config.min_fov, 1, 179);
-  this.config.max_fov = PSVUtils.stayBetween(this.config.max_fov, 1, 179);
-  this.config.tilt_up_max = PSVUtils.stayBetween(PSVUtils.parseAngle(this.config.tilt_up_max, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
-  this.config.tilt_down_max = PSVUtils.stayBetween(PSVUtils.parseAngle(this.config.tilt_down_max, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
-  if (this.config.default_fov === null) {
-    this.config.default_fov = this.config.max_fov / 2 + this.config.min_fov / 2;
-  }
-  else {
-    this.config.default_fov = PSVUtils.stayBetween(this.config.default_fov, this.config.min_fov, this.config.max_fov);
-  }
-  this.config.default_long = PSVUtils.parseAngle(this.config.default_long);
-  this.config.default_lat = PSVUtils.stayBetween(PSVUtils.parseAngle(this.config.default_lat, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
-  if (this.config.anim_lat === null) {
-    this.config.anim_lat = this.config.default_lat;
-  }
-  else {
-    this.config.anim_lat = PSVUtils.stayBetween(PSVUtils.parseAngle(this.config.anim_lat, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
-  }
-  this.config.long_offset = PSVUtils.parseAngle(this.config.long_offset);
-  this.config.lat_offset = PSVUtils.parseAngle(this.config.lat_offset);
-  this.config.anim_speed = PSVUtils.parseSpeed(this.config.anim_speed);
-  if (this.config.caption && !this.config.navbar) {
-    this.config.navbar = ['caption'];
+  // check system and config
+  if (!options.container) {
+    throw new PSVError('No value given for container.');
   }
 
-  // check config
-  if (!options.panorama || !options.container) {
-    throw new PSVError('No value given for panorama or container.');
+  if (!PhotoSphereViewer.SYSTEM.isCanvasSupported) {
+    throw new PSVError('Canvas is not supported.');
   }
 
   if ((!PhotoSphereViewer.SYSTEM.isWebGLSupported || !this.config.webgl) && !PSVUtils.checkTHREE('CanvasRenderer', 'Projector')) {
@@ -696,16 +716,69 @@ function PhotoSphereViewer(options) {
     }
   }
 
-  if (this.config.max_fov < this.config.min_fov) {
-    throw new PSVError('max_fov cannot be lower than min_fov.');
+  if (this.config.longitude_range && this.config.longitude_range.length !== 2) {
+    this.config.longitude_range = null;
+    console.warn('PhotoSphereViewer: longitude_range must have exactly two elements.');
   }
 
-  if (this.config.tilt_up_max < this.config.tilt_down_max) {
-    throw new PSVError('tilt_up_max cannot be lower than tilt_down_max.');
+  if (this.config.latitude_range) {
+    if (this.config.latitude_range.length !== 2) {
+      this.config.latitude_range = null;
+      console.warn('PhotoSphereViewer: latitude_range must have exactly two elements.');
+    }
+    else if (this.config.latitude_range[0] > this.config.latitude_range[1]) {
+      this.config.latitude_range = [this.config.latitude_range[1], this.config.latitude_range[0]];
+      console.warn('PhotoSphereViewer: latitude_range values must be ordered.');
+    }
+  }
+  else if (this.config.tilt_up_max !== undefined || this.config.tilt_down_max !== undefined) {
+    this.config.latitude_range = [
+      this.config.tilt_down_max !== undefined ? this.config.tilt_down_max - Math.PI / 4 : -PSVUtils.HalfPI,
+      this.config.tilt_up_max !== undefined ? this.config.tilt_up_max + Math.PI / 4 : PSVUtils.HalfPI
+    ];
+    console.warn('PhotoSphereViewer: tilt_up_max and tilt_down_max are deprecated, use latitude_range instead.');
+  }
+
+  if (this.config.max_fov < this.config.min_fov) {
+    this.config.max_fov = PhotoSphereViewer.DEFAULTS.max_fov;
+    this.config.min_fov = PhotoSphereViewer.DEFAULTS.min_fov;
+    console.warn('PhotoSphereViewer: max_fov cannot be lower than min_fov.');
+  }
+
+  // normalize config
+  this.config.min_fov = PSVUtils.stayBetween(this.config.min_fov, 1, 179);
+  this.config.max_fov = PSVUtils.stayBetween(this.config.max_fov, 1, 179);
+  if (this.config.default_fov === null) {
+    this.config.default_fov = this.config.max_fov / 2 + this.config.min_fov / 2;
+  }
+  else {
+    this.config.default_fov = PSVUtils.stayBetween(this.config.default_fov, this.config.min_fov, this.config.max_fov);
+  }
+  this.config.default_long = PSVUtils.parseAngle(this.config.default_long);
+  this.config.default_lat = PSVUtils.stayBetween(PSVUtils.parseAngle(this.config.default_lat, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
+  if (this.config.anim_lat === null) {
+    this.config.anim_lat = this.config.default_lat;
+  }
+  else {
+    this.config.anim_lat = PSVUtils.stayBetween(PSVUtils.parseAngle(this.config.anim_lat, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
+  }
+  this.config.anim_speed = PSVUtils.parseSpeed(this.config.anim_speed);
+  if (this.config.caption && !this.config.navbar) {
+    this.config.navbar = ['caption'];
+  }
+  if (this.config.longitude_range) {
+    this.config.longitude_range = this.config.longitude_range.map(function(angle) {
+      return PSVUtils.parseAngle(angle);
+    });
+  }
+  if (this.config.latitude_range) {
+    this.config.latitude_range = this.config.latitude_range.map(function(angle) {
+      return PSVUtils.stayBetween(PSVUtils.parseAngle(angle, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
+    });
   }
 
   // references to components
-  this.parent = (typeof this.config.container == 'string') ? document.getElementById(this.config.container) : this.config.container;
+  this.parent = (typeof options.container == 'string') ? document.getElementById(options.container) : options.container;
   this.container = null;
   this.loader = null;
   this.navbar = null;
@@ -721,7 +794,6 @@ function PhotoSphereViewer(options) {
   this.mesh = null;
   this.raycaster = null;
   this.doControls = null;
-  this.actions = {};
 
   // local properties
   this.prop = {
@@ -729,6 +801,9 @@ function PhotoSphereViewer(options) {
     longitude: 0, // current longitude of the center
     anim_speed: 0, // parsed anim speed (rad/sec)
     zoom_lvl: 0, // current zoom level
+    vFov: 0,
+    hFov: 0,
+    aspect: 0,
     moving: false, // is the user moving
     zooming: false, // is the user zooming
     start_mouse_x: 0, // start x position of the click/touch
@@ -757,34 +832,66 @@ function PhotoSphereViewer(options) {
     }
   };
 
-  // compute zoom level
-  this.prop.zoom_lvl = Math.round((this.config.default_fov - this.config.min_fov) / (this.config.max_fov - this.config.min_fov) * 100);
-  this.prop.zoom_lvl -= 2 * (this.prop.zoom_lvl - 50);
-
   // create actual container
   this.container = document.createElement('div');
   this.container.classList.add('psv-container');
   this.parent.appendChild(this.container);
 
-  // is canvas supported?
-  if (!PhotoSphereViewer.SYSTEM.isCanvasSupported) {
-    this.container.textContent = 'Canvas is not supported, update your browser!';
-    throw new PSVError('Canvas is not supported.');
-  }
-
-  // init
-  this.rotate({
-    longitude: this.config.default_long,
-    latitude: this.config.default_lat
-  });
-
+  // apply config
   if (this.config.size !== null) {
     this._setViewerSize(this.config.size);
   }
 
+  this._onResize();
+
+  var tempZoom = Math.round((this.config.default_fov - this.config.min_fov) / (this.config.max_fov - this.config.min_fov) * 100);
+  this.zoom(tempZoom - 2 * (tempZoom - 50), false);
+
+  this.rotate({
+    longitude: this.config.default_long,
+    latitude: this.config.default_lat
+  }, false);
+
+  // load components
+  if (this.config.navbar) {
+    this.navbar = new PSVNavBar(this);
+    this.navbar.hide();
+  }
+
+  this.hud = new PSVHUD(this);
+  this.hud.hide();
+
+  this.panel = new PSVPanel(this);
+
+  this.tooltip = new PSVTooltip(this.hud);
+
+  // init
+  this.parent.photoSphereViewer = this;
+
+  this._bindEvents();
+
   if (this.config.autoload) {
     this.load();
   }
+
+  // enable GUI after first render
+  this.once('render', function() {
+    if (this.config.navbar) {
+      this.navbar.show();
+    }
+
+    this.hud.show();
+
+    if (this.config.markers) {
+      this.config.markers.forEach(function(marker) {
+        this.hud.addMarker(marker, false);
+      }, this);
+
+      this.hud.updatePositions();
+    }
+
+    this.trigger('ready');
+  }.bind(this));
 }
 
 /**
@@ -811,6 +918,7 @@ PhotoSphereViewer.ICONS = {};
  */
 PhotoSphereViewer.SYSTEM = {
   loaded: false,
+  pixelRatio: 1,
   isWebGLSupported: false,
   isCanvasSupported: false,
   deviceOrientationSupported: null,
@@ -836,10 +944,9 @@ PhotoSphereViewer.DEFAULTS = {
   default_fov: null,
   default_long: 0,
   default_lat: 0,
-  tilt_up_max: PSVUtils.HalfPI,
-  tilt_down_max: -PSVUtils.HalfPI,
-  long_offset: Math.PI / 1440.0,
-  lat_offset: Math.PI / 720.0,
+  longitude_range: null,
+  latitude_range: null,
+  move_speed: 1,
   time_anim: 2000,
   anim_speed: '2rpm',
   anim_lat: null,
@@ -869,6 +976,7 @@ PhotoSphereViewer.DEFAULTS = {
   },
   mousewheel: true,
   mousemove: true,
+  gyroscope: false,
   move_inertia: true,
   click_event_on_marker: true,
   transition: {
@@ -881,6 +989,8 @@ PhotoSphereViewer.DEFAULTS = {
   size: null,
   markers: []
 };
+
+uEvent.mixin(PhotoSphereViewer);
 
 
 /**
@@ -919,9 +1029,29 @@ PSVComponent.prototype.create = function() {
 PSVComponent.prototype.destroy = function() {
   this.parent.container.removeChild(this.container);
 
-  this.container = null;
-  this.psv = null;
-  this.parent = null;
+  if (this.constructor.publicMethods) {
+    this.constructor.publicMethods.forEach(function(method) {
+      delete this.psv[method];
+    }, this);
+  }
+
+  delete this.container;
+  delete this.psv;
+  delete this.parent;
+};
+
+/**
+ * Hides the component
+ */
+PSVComponent.prototype.hide = function() {
+  this.container.style.display = 'none';
+};
+
+/**
+ * Restores component visibility
+ */
+PSVComponent.prototype.show = function() {
+  this.container.style.display = null;
 };
 
 
@@ -931,6 +1061,12 @@ PSVComponent.prototype.destroy = function() {
  */
 function PSVNavBarButton(navbar) {
   PSVComponent.call(this, navbar);
+
+  if (this.constructor.id) {
+    this.id = this.constructor.id;
+  }
+
+  this.enabled = true;
 }
 
 PSVNavBarButton.prototype = Object.create(PSVComponent.prototype);
@@ -945,6 +1081,12 @@ PSVNavBarButton.prototype.create = function() {
   if (this.constructor.icon) {
     this.container.innerHTML = PhotoSphereViewer.ICONS[this.constructor.icon];
   }
+
+  this.container.addEventListener('click', function() {
+    if (this.enabled) {
+      this._onClick();
+    }
+  }.bind(this));
 };
 
 /**
@@ -958,6 +1100,31 @@ PSVNavBarButton.prototype.toggleActive = function(active) {
   if (this.constructor.iconActive) {
     this.container.innerHTML = PhotoSphereViewer.ICONS[active ? this.constructor.iconActive : this.constructor.icon];
   }
+};
+
+/**
+ * Disables the button
+ */
+PSVNavBarButton.prototype.disable = function() {
+  this.container.classList.add('disabled');
+
+  this.enabled = false;
+};
+
+/**
+ * Enables the button
+ */
+PSVNavBarButton.prototype.enable = function() {
+  this.container.classList.remove('disabled');
+
+  this.enabled = true;
+};
+
+/**
+ * Action when the button is clicked
+ */
+PSVNavBarButton.prototype._onClick = function() {
+
 };
 
 
@@ -981,6 +1148,8 @@ function PSVError(message) {
 PSVError.prototype = Object.create(Error.prototype);
 PSVError.prototype.name = 'PSVError';
 PSVError.prototype.constructor = PSVError;
+
+PhotoSphereViewer.Error = PSVError;
 
 
 /**
@@ -1175,8 +1344,6 @@ PhotoSphereViewer.prototype._setTexture = function(texture) {
  * Creates the 3D scene and GUI components
  */
 PhotoSphereViewer.prototype._createScene = function() {
-  this._onResize();
-
   this.raycaster = new THREE.Raycaster();
 
   // Renderer depends on whether WebGL is supported or not
@@ -1186,7 +1353,7 @@ PhotoSphereViewer.prototype._createScene = function() {
   this.camera = new THREE.PerspectiveCamera(this.config.default_fov, this.prop.size.width / this.prop.size.height, 1, 300);
   this.camera.position.set(0, 0, 0);
 
-  if (PSVUtils.checkTHREE('DeviceOrientationControls')) {
+  if (this.config.gyroscope && PSVUtils.checkTHREE('DeviceOrientationControls')) {
     this.doControls = new THREE.DeviceOrientationControls(this.camera);
   }
 
@@ -1209,24 +1376,6 @@ PhotoSphereViewer.prototype._createScene = function() {
   this.canvas_container.className = 'canvas-container';
   this.container.appendChild(this.canvas_container);
   this.canvas_container.appendChild(this.renderer.domElement);
-
-  // Navigation bar
-  if (this.config.navbar) {
-    this.container.classList.add('has-navbar');
-    this.navbar = new PSVNavBar(this);
-  }
-
-  // HUD
-  this.hud = new PSVHUD(this);
-  this.config.markers.forEach(function(marker) {
-    this.hud.addMarker(marker, false);
-  }, this);
-
-  // Panel
-  this.panel = new PSVPanel(this);
-
-  // Tooltip
-  this.tooltip = new PSVTooltip(this.hud);
 
   // Queue animation
   if (this.config.time_anim !== false) {
@@ -1256,9 +1405,6 @@ PhotoSphereViewer.prototype._createScene = function() {
     this.composer.addPass(this.passes.copy);
     this.composer.addPass(this.passes.blur);
   }
-
-  this._bindEvents();
-  this.trigger('ready');
 };
 
 /**
@@ -1308,7 +1454,7 @@ PhotoSphereViewer.prototype._transition = function(texture, position) {
 
     if (self.config.transition.blur) {
       self.passes.blur.uniforms.fDensity.value = properties.density;
-      self.prop.zoom_lvl = properties.zoom;
+      self.zoom(properties.zoom, false);
     }
 
     self.render();
@@ -1344,7 +1490,7 @@ PhotoSphereViewer.prototype._transition = function(texture, position) {
         self.passes.copy.enabled = true;
         self.passes.blur.enabled = false;
 
-        self.prop.zoom_lvl = original_zoom_lvl;
+        self.zoom(original_zoom_lvl, false);
       }
 
       // remove temp sphere and transfer the texture to the main sphere
@@ -1360,11 +1506,54 @@ PhotoSphereViewer.prototype._transition = function(texture, position) {
 
       // actually rotate the camera
       if (position) {
+        // FIXME: find a better way to handle ranges
+        if (self.config.latitude_range || self.config.longitude_range) {
+          self.config.longitude_range = self.config.latitude_range = null;
+          console.warn('PhotoSphereViewer: trying to perform transition with longitude_range and/or latitude_range, ranges cleared.');
+        }
+
         self.rotate(position);
       }
       else {
         self.render();
       }
+    });
+};
+
+/**
+ * Reverse autorotate direction with smooth transition
+ */
+PhotoSphereViewer.prototype._reverseAutorotate = function() {
+  var self = this;
+  var newSpeed = -this.config.anim_speed;
+  var range = this.config.longitude_range;
+  this.config.longitude_range = null;
+
+  PSVUtils.animation({
+      properties: {
+        speed: { start: this.config.anim_speed, end: 0 }
+      },
+      duration: 300,
+      easing: 'inSine',
+      onTick: function(properties) {
+        self.config.anim_speed = properties.speed;
+      }
+    })
+    .then(function() {
+      return PSVUtils.animation({
+        properties: {
+          speed: { start: 0, end: newSpeed }
+        },
+        duration: 300,
+        easing: 'outSine',
+        onTick: function(properties) {
+          self.config.anim_speed = properties.speed;
+        }
+      });
+    })
+    .then(function() {
+      self.config.longitude_range = range;
+      self.config.anim_speed = newSpeed;
     });
 };
 
@@ -1390,6 +1579,14 @@ PhotoSphereViewer.prototype._bindEvents = function() {
   if (this.config.mousewheel) {
     this.hud.container.addEventListener(PhotoSphereViewer.SYSTEM.mouseWheelEvent, this);
   }
+
+  this.on('_side-reached', function(side) {
+    if (this.isAutorotateEnabled()) {
+      if (side === 'left' || side === 'right') {
+        this._reverseAutorotate();
+      }
+    }
+  });
 };
 
 /**
@@ -1420,11 +1617,8 @@ PhotoSphereViewer.prototype._onResize = function() {
   if (this.container.clientWidth != this.prop.size.width || this.container.clientHeight != this.prop.size.height) {
     this.prop.size.width = parseInt(this.container.clientWidth);
     this.prop.size.height = parseInt(this.container.clientHeight);
+    this.prop.aspect = this.prop.size.width / this.prop.size.height;
     this.prop.boundingRect = this.container.getBoundingClientRect();
-
-    if (this.camera) {
-      this.camera.aspect = this.prop.size.width / this.prop.size.height;
-    }
 
     if (this.renderer) {
       this.renderer.setSize(this.prop.size.width, this.prop.size.height);
@@ -1563,11 +1757,10 @@ PhotoSphereViewer.prototype._stopMoveInertia = function(evt) {
     },
     onCancel: function() {
       self.prop.moving = false;
+    },
+    onDone: function() {
+      self.prop.moving = false;
     }
-  });
-
-  this.prop.animation_promise.then(function() {
-    self.prop.moving = false;
   });
 };
 
@@ -1576,18 +1769,14 @@ PhotoSphereViewer.prototype._stopMoveInertia = function(evt) {
  * @param evt (Event) The event
  */
 PhotoSphereViewer.prototype._click = function(evt) {
-  this.trigger('_click', evt);
-  if (evt.defaultPrevented) {
-    return;
-  }
-
   var data = {
+    target: evt.target,
     client_x: parseInt(evt.clientX - this.prop.boundingRect.left),
     client_y: parseInt(evt.clientY - this.prop.boundingRect.top)
   };
 
   if (evt.data) {
-    data = PSVUtils.deepmerge(data, evt.data);
+    PSVUtils.deepmerge(data, evt.data);
   }
 
   var screen = new THREE.Vector2(
@@ -1649,9 +1838,11 @@ PhotoSphereViewer.prototype._move = function(evt) {
     var x = parseInt(evt.clientX);
     var y = parseInt(evt.clientY);
 
+    var multiplicator = 1 / PhotoSphereViewer.SYSTEM.pixelRatio * Math.PI / 180 * this.config.move_speed;
+
     this.rotate({
-      longitude: this.prop.longitude - (x - this.prop.mouse_x) * this.config.long_offset,
-      latitude: this.prop.latitude + (y - this.prop.mouse_y) * this.config.lat_offset
+      longitude: this.prop.longitude - (x - this.prop.mouse_x) / this.prop.size.width * multiplicator * this.prop.hFov,
+      latitude: this.prop.latitude + (y - this.prop.mouse_y) / this.prop.size.height * multiplicator * this.prop.vFov
     });
 
     this.prop.mouse_x = x;
@@ -1738,6 +1929,10 @@ PhotoSphereViewer.prototype._logMouseMove = function(evt) {
  * Starts to load the panorama
  */
 PhotoSphereViewer.prototype.load = function() {
+  if (!this.config.panorama) {
+    throw new PSVError('No value given for panorama.');
+  }
+
   this.setPanorama(this.config.panorama, false);
 };
 
@@ -1803,10 +1998,11 @@ PhotoSphereViewer.prototype.render = function(updateDirection) {
   if (updateDirection !== false) {
     this.prop.direction = this.sphericalCoordsToVector3(this.prop.longitude, this.prop.latitude);
     this.camera.lookAt(this.prop.direction);
-    this.camera.rotation.z = 0;
+    // this.camera.rotation.z = 0;
   }
 
-  this.camera.fov = this.config.max_fov + (this.prop.zoom_lvl / 100) * (this.config.min_fov - this.config.max_fov);
+  this.camera.aspect = this.prop.aspect;
+  this.camera.fov = this.prop.vFov;
   this.camera.updateProjectionMatrix();
 
   if (this.composer) {
@@ -1823,6 +2019,12 @@ PhotoSphereViewer.prototype.render = function(updateDirection) {
  * Destroy the viewer
  */
 PhotoSphereViewer.prototype.destroy = function() {
+  this.stopAll();
+
+  if (this.isFullscreenEnabled()) {
+    PSVUtils.exitFullscreen();
+  }
+
   // remove listeners
   window.removeEventListener('resize', this);
   document.removeEventListener(PhotoSphereViewer.SYSTEM.fullscreenEvent, this);
@@ -1841,11 +2043,11 @@ PhotoSphereViewer.prototype.destroy = function() {
   }
 
   // destroy components
+  if (this.tooltip) this.tooltip.destroy();
   if (this.hud) this.hud.destroy();
   if (this.loader) this.loader.destroy();
   if (this.navbar) this.navbar.destroy();
   if (this.panel) this.panel.destroy();
-  if (this.tooltip) this.tooltip.destroy();
   if (this.doControls) this.doControls.disconnect();
 
   // destroy ThreeJS view
@@ -1855,8 +2057,8 @@ PhotoSphereViewer.prototype.destroy = function() {
   }
 
   if (this.mesh) {
-    this.mesh.material.geometry.dispose();
-    this.mesh.material.geometry = null;
+    this.mesh.geometry.dispose();
+    this.mesh.geometry = null;
     this.mesh.material.map.dispose();
     this.mesh.material.map = null;
     this.mesh.material.dispose();
@@ -1869,22 +2071,26 @@ PhotoSphereViewer.prototype.destroy = function() {
   }
   this.parent.removeChild(this.container);
 
+  delete this.parent.photoSphereViewer;
+
   // clean references
-  this.container = null;
-  this.loader = null;
-  this.navbar = null;
-  this.hud = null;
-  this.panel = null;
-  this.tooltip = null;
-  this.canvas_container = null;
-  this.renderer = null;
-  this.composer = null;
-  this.scene = null;
-  this.camera = null;
-  this.mesh = null;
-  this.raycaster = null;
-  this.passes = {};
-  this.actions = {};
+  delete this.parent;
+  delete this.container;
+  delete this.loader;
+  delete this.navbar;
+  delete this.hud;
+  delete this.panel;
+  delete this.tooltip;
+  delete this.canvas_container;
+  delete this.renderer;
+  delete this.composer;
+  delete this.scene;
+  delete this.camera;
+  delete this.mesh;
+  delete this.doControls;
+  delete this.raycaster;
+  delete this.passes;
+  delete this.config;
 };
 
 /**
@@ -2068,18 +2274,20 @@ PhotoSphereViewer.prototype.toggleGyroscopeControl = function() {
 /**
  * Rotate the camera
  * @param position (Object) latitude & longitude or x & y
+ * @param render (boolean) default true
  */
-PhotoSphereViewer.prototype.rotate = function(position) {
-  this._cleanPosition(position, true);
+PhotoSphereViewer.prototype.rotate = function(position, render) {
+  this._cleanPosition(position);
+  this._applyRanges(position);
 
   this.prop.longitude = position.longitude;
   this.prop.latitude = position.latitude;
 
-  if (this.renderer) {
+  if (render !== false && this.renderer) {
     this.render();
-  }
 
-  this.trigger('position-updated', this.getPosition());
+    this.trigger('position-updated', this.getPosition());
+  }
 };
 
 /**
@@ -2095,7 +2303,8 @@ PhotoSphereViewer.prototype.animate = function(position, duration) {
     return;
   }
 
-  this._cleanPosition(position, true);
+  this._cleanPosition(position);
+  this._applyRanges(position);
 
   if (!duration && typeof duration != 'number') {
     // desired radial speed
@@ -2145,11 +2354,18 @@ PhotoSphereViewer.prototype.stopAnimation = function() {
 /**
  * Zoom
  * @param level (integer) New zoom level
+ * @param render (boolean) default true
  */
-PhotoSphereViewer.prototype.zoom = function(level) {
+PhotoSphereViewer.prototype.zoom = function(level, render) {
   this.prop.zoom_lvl = PSVUtils.stayBetween(Math.round(level), 0, 100);
-  this.render();
-  this.trigger('zoom-updated', this.getZoomLevel());
+  this.prop.vFov = this.config.max_fov + (this.prop.zoom_lvl / 100) * (this.config.min_fov - this.config.max_fov);
+  this.prop.hFov = 2 * Math.atan(Math.tan(this.prop.vFov * Math.PI / 180 / 2) * this.prop.aspect) * 180 / Math.PI;
+
+  if (render !== false && this.renderer) {
+    this.render();
+
+    this.trigger('zoom-updated', this.getZoomLevel());
+  }
 };
 
 /**
@@ -2182,64 +2398,6 @@ PhotoSphereViewer.prototype.toggleFullscreen = function() {
   }
 };
 
-/**
- * Adds an event listener
- * If "func" is an object, its "handleEvent" method will be called with an object as paremeter
- *    - type: name of the event prefixed with "psv:"
- *    - args: array of action arguments
- * @param name (string) Action name
- * @param func (Function|Object) The handler function, or an object with an "handleEvent" method
- * @return (PhotoSphereViewer)
- */
-PhotoSphereViewer.prototype.on = function(name, func) {
-  if (!(name in this.actions)) {
-    this.actions[name] = [];
-  }
-
-  this.actions[name].push(func);
-
-  return this;
-};
-
-/**
- * Removes an event listener
- * @param name (string) Action name
- * @param func (Function|Object)
- * @return (PhotoSphereViewer)
- */
-PhotoSphereViewer.prototype.off = function(name, func) {
-  if (name in this.actions) {
-    var idx = this.actions[name].indexOf(func);
-    if (idx !== -1) {
-      this.actions[name].splice(idx, 1);
-    }
-  }
-
-  return this;
-};
-
-/**
- * Triggers an action
- * @param name (string) Action name
- * @param args... (mixed) Arguments to send to the handler functions
- */
-PhotoSphereViewer.prototype.trigger = function(name, args) {
-  args = Array.prototype.slice.call(arguments, 1);
-  if ((name in this.actions) && this.actions[name].length > 0) {
-    this.actions[name].forEach(function(func) {
-      if (typeof func === 'object') {
-        func.handleEvent({
-          type: 'psv:' + name,
-          args: args
-        });
-      }
-      else {
-        func.apply(this, args);
-      }
-    }, this);
-  }
-};
-
 
 /**
  * Init the global SYSTEM var with information generic support information
@@ -2247,6 +2405,7 @@ PhotoSphereViewer.prototype.trigger = function(name, args) {
 PhotoSphereViewer.loadSystem = function() {
   var S = PhotoSphereViewer.SYSTEM;
   S.loaded = true;
+  S.pixelRatio = window.devicePixelRatio || 1;
   S.isWebGLSupported = PSVUtils.isWebGLSupported();
   S.isCanvasSupported = PSVUtils.isCanvasSupported();
   S.maxTextureWidth = S.isWebGLSupported ? PSVUtils.getMaxTextureWidth() : 4096;
@@ -2350,9 +2509,8 @@ PhotoSphereViewer.prototype.vector3ToSphericalCoords = function(vector) {
 /**
  * Converts x/y to latitude/longitude if present and ensure boundaries
  * @param position (Object)
- * @param useTiltMax (boolean) use "tilt_down_max" and "tilt_up_max" for latitude - default: false
  */
-PhotoSphereViewer.prototype._cleanPosition = function(position, useTiltMax) {
+PhotoSphereViewer.prototype._cleanPosition = function(position) {
   if (position.hasOwnProperty('x') && position.hasOwnProperty('y')) {
     var sphericalCoords = this.textureCoordsToSphericalCoords(position.x, position.y);
     position.longitude = sphericalCoords.longitude;
@@ -2360,11 +2518,63 @@ PhotoSphereViewer.prototype._cleanPosition = function(position, useTiltMax) {
   }
 
   position.longitude = PSVUtils.parseAngle(position.longitude);
-  position.latitude = PSVUtils.stayBetween(
-    PSVUtils.parseAngle(position.latitude, -Math.PI),
-    useTiltMax ? this.config.tilt_down_max : -PSVUtils.HalfPI,
-    useTiltMax ? this.config.tilt_up_max : PSVUtils.HalfPI
-  );
+  position.latitude = PSVUtils.stayBetween(PSVUtils.parseAngle(position.latitude, -Math.PI), -PSVUtils.HalfPI, PSVUtils.HalfPI);
+};
+
+/**
+ * Apply "longitude_range" and "latitude_range"
+ * @param position
+ */
+PhotoSphereViewer.prototype._applyRanges = function(position) {
+  var range, offset;
+
+  if (this.config.longitude_range) {
+    range = PSVUtils.clone(this.config.longitude_range);
+    offset = this.prop.hFov / 180 * Math.PI / 2;
+
+    range[0] = PSVUtils.parseAngle(range[0] + offset);
+    range[1] = PSVUtils.parseAngle(range[1] - offset);
+
+    if (range[0] > range[1]) { // when the range cross longitude 0
+      if (position.longitude > range[1] && position.longitude < range[0]) {
+        if (position.longitude > (range[0] / 2 + range[1] / 2)) { // detect which side we are closer too
+          position.longitude = range[0];
+          this.trigger('_side-reached', 'left');
+        }
+        else {
+          position.longitude = range[1];
+          this.trigger('_side-reached', 'right');
+        }
+      }
+    }
+    else {
+      if (position.longitude < range[0]) {
+        position.longitude = range[0];
+        this.trigger('_side-reached', 'left');
+      }
+      else if (position.longitude > range[1]) {
+        position.longitude = range[1];
+        this.trigger('_side-reached', 'right');
+      }
+    }
+  }
+
+  if (this.config.latitude_range) {
+    range = PSVUtils.clone(this.config.latitude_range);
+    offset = this.prop.vFov / 180 * Math.PI / 2;
+
+    range[0] = PSVUtils.parseAngle(range[0] + offset, -Math.PI);
+    range[1] = PSVUtils.parseAngle(range[1] - offset, -Math.PI);
+
+    if (position.latitude < range[0]) {
+      position.latitude = range[0];
+      this.trigger('_side-reached', 'bottom');
+    }
+    else if (position.latitude > range[1]) {
+      position.latitude = range[1];
+      this.trigger('_side-reached', 'top');
+    }
+  }
 };
 
 
@@ -2381,6 +2591,7 @@ function PSVNavBarAutorotateButton(navbar) {
 PSVNavBarAutorotateButton.prototype = Object.create(PSVNavBarButton.prototype);
 PSVNavBarAutorotateButton.prototype.constructor = PSVNavBarAutorotateButton;
 
+PSVNavBarAutorotateButton.id = 'autorotate';
 PSVNavBarAutorotateButton.className = 'psv-button hover-scale autorotate-button';
 PSVNavBarAutorotateButton.icon = 'play.svg';
 PSVNavBarAutorotateButton.iconActive = 'play-active.svg';
@@ -2393,8 +2604,6 @@ PSVNavBarAutorotateButton.prototype.create = function() {
   PSVNavBarButton.prototype.create.call(this);
 
   this.container.title = this.psv.config.lang.autorotate;
-
-  this.container.addEventListener('click', this.psv.toggleAutorotate.bind(this.psv));
 
   this.psv.on('autorotate', this);
 };
@@ -2415,9 +2624,16 @@ PSVNavBarAutorotateButton.prototype.destroy = function() {
 PSVNavBarAutorotateButton.prototype.handleEvent = function(e) {
   switch (e.type) {
     // @formatter:off
-    case 'psv:autorotate': this.toggleActive(e.args[0]); break;
+    case 'autorotate': this.toggleActive(e.args[0]); break;
     // @formatter:on
   }
+};
+
+/**
+ * Toggles autorotate on click
+ */
+PSVNavBarAutorotateButton.prototype._onClick = function() {
+  this.psv.toggleAutorotate();
 };
 
 
@@ -2431,13 +2647,17 @@ function PSVNavBarCustomButton(navbar, config) {
 
   this.config = config;
 
+  if (this.config.id) {
+    this.id = this.config.id;
+  }
+
   this.create();
 }
 
 PSVNavBarCustomButton.prototype = Object.create(PSVNavBarButton.prototype);
 PSVNavBarCustomButton.prototype.constructor = PSVNavBarCustomButton;
 
-PSVNavBarCustomButton.className = 'psv-button hoverable';
+PSVNavBarCustomButton.className = 'psv-button';
 
 /**
  * Creates the button
@@ -2447,7 +2667,7 @@ PSVNavBarCustomButton.prototype.create = function() {
   PSVNavBarButton.prototype.create.call(this);
 
   if (this.config.className) {
-    this.container.classList.add(this.config.className);
+    PSVUtils.addClasses(this.container, this.config.className);
   }
 
   if (this.config.title) {
@@ -2457,9 +2677,20 @@ PSVNavBarCustomButton.prototype.create = function() {
   if (this.config.content) {
     this.container.innerHTML = this.config.content;
   }
+};
 
+PSVNavBarCustomButton.prototype.destroy = function() {
+  delete this.config;
+
+  PSVNavBarButton.prototype.destroy.call(this);
+};
+
+/**
+ * Calls user method on click
+ */
+PSVNavBarCustomButton.prototype._onClick = function() {
   if (this.config.onClick) {
-    this.container.addEventListener('click', this.config.onClick);
+    this.config.onClick.apply(this.psv);
   }
 };
 
@@ -2477,6 +2708,7 @@ function PSVNavBarDownloadButton(navbar) {
 PSVNavBarDownloadButton.prototype = Object.create(PSVNavBarButton.prototype);
 PSVNavBarDownloadButton.prototype.constructor = PSVNavBarDownloadButton;
 
+PSVNavBarDownloadButton.id = 'download';
 PSVNavBarDownloadButton.className = 'psv-button hover-scale download-button';
 PSVNavBarDownloadButton.icon = 'download.svg';
 
@@ -2488,14 +2720,12 @@ PSVNavBarDownloadButton.prototype.create = function() {
   PSVNavBarButton.prototype.create.call(this);
 
   this.container.title = this.psv.config.lang.download;
-
-  this.container.addEventListener('click', this._download.bind(this));
 };
 
 /**
- * Ask the browser to download the panorama source file
+ * Asks the browser to download the panorama source file
  */
-PSVNavBarDownloadButton.prototype._download = function() {
+PSVNavBarDownloadButton.prototype._onClick = function() {
   var link = document.createElement('a');
   link.href = this.psv.config.panorama;
   link.download = this.psv.config.panorama;
@@ -2517,6 +2747,7 @@ function PSVNavBarFullscreenButton(navbar) {
 PSVNavBarFullscreenButton.prototype = Object.create(PSVNavBarButton.prototype);
 PSVNavBarFullscreenButton.prototype.constructor = PSVNavBarFullscreenButton;
 
+PSVNavBarFullscreenButton.id = 'fullscreen';
 PSVNavBarFullscreenButton.className = 'psv-button hover-scale fullscreen-button';
 PSVNavBarFullscreenButton.icon = 'fullscreen-in.svg';
 PSVNavBarFullscreenButton.iconActive = 'fullscreen-out.svg';
@@ -2529,8 +2760,6 @@ PSVNavBarFullscreenButton.prototype.create = function() {
   PSVNavBarButton.prototype.create.call(this);
 
   this.container.title = this.psv.config.lang.fullscreen;
-
-  this.container.addEventListener('click', this.psv.toggleFullscreen.bind(this.psv));
 
   this.psv.on('fullscreen-updated', this);
 };
@@ -2551,9 +2780,16 @@ PSVNavBarFullscreenButton.prototype.destroy = function() {
 PSVNavBarFullscreenButton.prototype.handleEvent = function(e) {
   switch (e.type) {
     // @formatter:off
-    case 'psv:fullscreen-updated': this.toggleActive(e.args[0]); break;
+    case 'fullscreen-updated': this.toggleActive(e.args[0]); break;
     // @formatter:on
   }
+};
+
+/**
+ * Toggles fullscreen on click
+ */
+PSVNavBarFullscreenButton.prototype._onClick = function() {
+  this.psv.toggleFullscreen();
 };
 
 
@@ -2570,6 +2806,7 @@ function PSVNavBarGyroscopeButton(navbar) {
 PSVNavBarGyroscopeButton.prototype = Object.create(PSVNavBarButton.prototype);
 PSVNavBarGyroscopeButton.prototype.constructor = PSVNavBarGyroscopeButton;
 
+PSVNavBarGyroscopeButton.id = 'gyroscope';
 PSVNavBarGyroscopeButton.className = 'psv-button hover-scale gyroscope-button';
 PSVNavBarGyroscopeButton.icon = 'compass.svg';
 
@@ -2580,7 +2817,6 @@ PSVNavBarGyroscopeButton.icon = 'compass.svg';
 PSVNavBarGyroscopeButton.prototype.create = function() {
   PSVNavBarButton.prototype.create.call(this);
 
-  this.container.style.display = 'none';
   this.container.title = this.psv.config.lang.gyroscope;
 
   PhotoSphereViewer.SYSTEM.deviceOrientationSupported.promise.then(
@@ -2588,7 +2824,7 @@ PSVNavBarGyroscopeButton.prototype.create = function() {
     this._onAvailabilityChange.bind(this, false)
   );
 
-  this.container.addEventListener('click', this.psv.toggleGyroscopeControl.bind(this.psv));
+  this.hide();
 
   this.psv.on('gyroscope-updated', this);
 };
@@ -2609,22 +2845,30 @@ PSVNavBarGyroscopeButton.prototype.destroy = function() {
 PSVNavBarGyroscopeButton.prototype.handleEvent = function(e) {
   switch (e.type) {
     // @formatter:off
-    case 'psv:gyroscope-updated': this.toggleActive(e.args[0]); break;
+    case 'gyroscope-updated': this.toggleActive(e.args[0]); break;
     // @formatter:on
   }
 };
 
+/**
+ * Toggle gyroscope on click
+ */
+PSVNavBarGyroscopeButton.prototype._onClick = function() {
+  this.psv.toggleGyroscopeControl();
+};
+
+/**
+ * Update button display when API is ready
+ * @param available
+ */
 PSVNavBarGyroscopeButton.prototype._onAvailabilityChange = function(available) {
   if (available) {
     if (this.psv.doControls) {
-      this.container.style.display = 'block';
+      this.show();
     }
     else {
       throw new PSVError('Missing Three.js components: DeviceOrientationControls. Get them from threejs-examples package.');
     }
-  }
-  else {
-    this.destroy();
   }
 };
 
@@ -2647,6 +2891,7 @@ function PSVNavBarMarkersButton(navbar) {
 PSVNavBarMarkersButton.prototype = Object.create(PSVNavBarButton.prototype);
 PSVNavBarMarkersButton.prototype.constructor = PSVNavBarMarkersButton;
 
+PSVNavBarMarkersButton.id = 'markers';
 PSVNavBarMarkersButton.className = 'psv-button hover-scale markers-button';
 PSVNavBarMarkersButton.icon = 'pin.svg';
 
@@ -2659,8 +2904,6 @@ PSVNavBarMarkersButton.prototype.create = function() {
 
   this.container.title = this.psv.config.lang.markers;
 
-  this.container.addEventListener('click', this.toggleMarkers.bind(this));
-
   this.psv.on('open-panel', this);
   this.psv.on('close-panel', this);
 };
@@ -2672,6 +2915,8 @@ PSVNavBarMarkersButton.prototype.destroy = function() {
   this.psv.off('open-panel', this);
   this.psv.off('close-panel', this);
 
+  delete this.prop;
+
   PSVNavBarButton.prototype.destroy.call(this);
 };
 
@@ -2682,10 +2927,17 @@ PSVNavBarMarkersButton.prototype.destroy = function() {
 PSVNavBarMarkersButton.prototype.handleEvent = function(e) {
   switch (e.type) {
     // @formatter:off
-    case 'psv:open-panel': this._onPanelOpened(); break;
-    case 'psv:close-panel': this._onPanelClosed(); break;
+    case 'open-panel': this._onPanelOpened(); break;
+    case 'close-panel': this._onPanelClosed(); break;
     // @formatter:on
   }
+};
+
+/**
+ * Toggles markers list on click
+ */
+PSVNavBarMarkersButton.prototype._onClick = function() {
+  this.toggleMarkers();
 };
 
 /**
@@ -2809,6 +3061,7 @@ function PSVNavBarZoomButton(navbar) {
 PSVNavBarZoomButton.prototype = Object.create(PSVNavBarButton.prototype);
 PSVNavBarZoomButton.prototype.constructor = PSVNavBarZoomButton;
 
+PSVNavBarZoomButton.id = 'zoom';
 PSVNavBarZoomButton.className = 'psv-button zoom-button';
 
 /**
@@ -2855,10 +3108,9 @@ PSVNavBarZoomButton.prototype.create = function() {
 
   this.psv.on('zoom-updated', this);
 
-  var self = this;
-  window.setTimeout(function() {
-    self._moveZoomValue(self.psv.prop.zoom_lvl);
-  }, 0);
+  this.psv.once('ready', function() {
+    this._moveZoomValue(this.psv.prop.zoom_lvl);
+  }.bind(this));
 };
 
 /**
@@ -2869,6 +3121,9 @@ PSVNavBarZoomButton.prototype.destroy = function() {
   this.psv.container.removeEventListener('touchmove', this);
   this.psv.container.removeEventListener('mouseup', this);
   this.psv.container.removeEventListener('touchend', this);
+
+  delete this.zoom_range;
+  delete this.zoom_value;
 
   this.psv.off('zoom-updated', this);
 
@@ -2888,7 +3143,7 @@ PSVNavBarZoomButton.prototype.handleEvent = function(e) {
     case 'touchmove': this._changeZoomByTouch(e); break;
     case 'mouseup': this._stopZoomChange(e); break;
     case 'touchend': this._stopZoomChange(e); break;
-    case 'psv:zoom-updated': this._moveZoomValue(e.args[0]); break;
+    case 'zoom-updated': this._moveZoomValue(e.args[0]); break;
     // @formatter:on
   }
 };
@@ -2908,6 +3163,10 @@ PSVNavBarZoomButton.prototype._moveZoomValue = function(level) {
  * @return (void)
  */
 PSVNavBarZoomButton.prototype._initZoomChangeWithMouse = function(evt) {
+  if (!this.enabled) {
+    return;
+  }
+
   this.prop.mousedown = true;
   this._changeZoom(evt.clientX);
 };
@@ -2918,6 +3177,10 @@ PSVNavBarZoomButton.prototype._initZoomChangeWithMouse = function(evt) {
  * @return (void)
  */
 PSVNavBarZoomButton.prototype._initZoomChangeByTouch = function(evt) {
+  if (!this.enabled) {
+    return;
+  }
+
   this.prop.mousedown = true;
   this._changeZoom(evt.changedTouches[0].clientX);
 };
@@ -2927,6 +3190,10 @@ PSVNavBarZoomButton.prototype._initZoomChangeByTouch = function(evt) {
  * Zoom in and register long press timer
  */
 PSVNavBarZoomButton.prototype._zoomIn = function() {
+  if (!this.enabled) {
+    return;
+  }
+
   this.prop.buttondown = true;
   this.psv.zoomIn();
   window.setTimeout(this._startLongPressInterval.bind(this, 1), 200);
@@ -2937,6 +3204,10 @@ PSVNavBarZoomButton.prototype._zoomIn = function() {
  * Zoom out and register long press timer
  */
 PSVNavBarZoomButton.prototype._zoomOut = function() {
+  if (!this.enabled) {
+    return;
+  }
+
   this.prop.buttondown = true;
   this.psv.zoomOut();
   window.setTimeout(this._startLongPressInterval.bind(this, -1), 200);
@@ -2959,6 +3230,10 @@ PSVNavBarZoomButton.prototype._startLongPressInterval = function(value) {
  * @return (void)
  */
 PSVNavBarZoomButton.prototype._stopZoomChange = function() {
+  if (!this.enabled) {
+    return;
+  }
+
   window.clearInterval(this.prop.longPressInterval);
   this.prop.longPressInterval = null;
   this.prop.mousedown = false;
@@ -2971,6 +3246,10 @@ PSVNavBarZoomButton.prototype._stopZoomChange = function() {
  * @return (void)
  */
 PSVNavBarZoomButton.prototype._changeZoomWithMouse = function(evt) {
+  if (!this.enabled) {
+    return;
+  }
+
   evt.preventDefault();
   this._changeZoom(evt.clientX);
 };
@@ -2981,6 +3260,10 @@ PSVNavBarZoomButton.prototype._changeZoomWithMouse = function(evt) {
  * @return (void)
  */
 PSVNavBarZoomButton.prototype._changeZoomByTouch = function(evt) {
+  if (!this.enabled) {
+    return;
+  }
+
   evt.preventDefault();
   this._changeZoom(evt.changedTouches[0].clientX);
 };
@@ -3018,7 +3301,8 @@ PSVHUD.prototype = Object.create(PSVComponent.prototype);
 PSVHUD.prototype.constructor = PSVHUD;
 
 PSVHUD.className = 'psv-hud';
-PSVHUD.publicMethods = ['addMarker', 'removeMarker', 'updateMarker', 'getMarker', 'getCurrentMarker', 'gotoMarker', 'hideMarker', 'showMarker', 'toggleMarker'];
+PSVHUD.publicMethods = ['addMarker', 'removeMarker', 'updateMarker', 'clearMarkers', 'getMarker', 'getCurrentMarker',
+  'gotoMarker', 'hideMarker', 'showMarker', 'toggleMarker'];
 
 PSVHUD.svgNS = 'http://www.w3.org/2000/svg';
 
@@ -3039,7 +3323,7 @@ PSVHUD.prototype.create = function() {
   this.container.addEventListener('mousemove', this, true);
 
   // Viewer events
-  this.psv.on('_click', this);
+  this.psv.on('click', this);
   this.psv.on('render', this);
 };
 
@@ -3047,15 +3331,16 @@ PSVHUD.prototype.create = function() {
  * Destroys the HUD
  */
 PSVHUD.prototype.destroy = function() {
+  this.clearMarkers(false);
+
   this.container.removeEventListener('mouseenter', this);
   this.container.removeEventListener('mouseleave', this);
   this.container.removeEventListener('mousemove', this);
 
-  this.psv.off('_click', this);
+  this.psv.off('click', this);
   this.psv.off('render', this);
 
-  this.container.removeChild(this.$svg);
-  this.$svg = null;
+  delete this.$svg;
 
   PSVComponent.prototype.destroy.call(this);
 };
@@ -3067,11 +3352,11 @@ PSVHUD.prototype.destroy = function() {
 PSVHUD.prototype.handleEvent = function(e) {
   switch (e.type) {
     // @formatter:off
-    case 'mouseenter': this._onMouseEnter(e);    break;
-    case 'mouseleave': this._onMouseLeave(e);    break;
-    case 'mousemove':  this._onMouseMove(e);     break;
-    case 'psv:_click': this._onClick(e.args[0]); break;
-    case 'psv:render': this.updatePositions();   break;
+    case 'mouseenter': this._onMouseEnter(e); break;
+    case 'mouseleave': this._onMouseLeave(e); break;
+    case 'mousemove': this._onMouseMove(e); break;
+    case 'click': this._onClick(e.args[0], e); break;
+    case 'render': this.updatePositions(); break;
     // @formatter:on
   }
 };
@@ -3155,31 +3440,32 @@ PSVHUD.prototype.getCurrentMarker = function() {
 
 /**
  * Update a marker
- * @param marker (Object)
+ * @param input (Object)
  * @param render (Boolean) "false" to disable immediate render
  * @return (Object) a modified marker object
  */
-PSVHUD.prototype.updateMarker = function(marker, render) {
-  var old = this.getMarker(marker);
+PSVHUD.prototype.updateMarker = function(input, render) {
+  var marker = this.getMarker(input);
 
   // clean some previous data
-  if (old.className) {
-    old.$el.classList.remove(old.className);
+  if (marker.className) {
+    PSVUtils.removeClasses(marker.$el, marker.className);
   }
-  if (old.tooltip) {
-    old.$el.classList.remove('has-tooltip');
+  if (marker.tooltip) {
+    marker.$el.classList.remove('has-tooltip');
   }
 
   // merge objects
-  if (marker == old) marker = PSVUtils.clone(marker);
-  delete marker.$el;
-  marker = PSVUtils.deepmerge(old, marker);
+  if (marker != input) {
+    delete input.$el;
+    PSVUtils.deepmerge(marker, input);
+  }
 
   marker.position2D = null;
 
   // add classes
   if (marker.className) {
-    marker.$el.classList.add(marker.className);
+    PSVUtils.addClasses(marker.$el, marker.className);
   }
   if (marker.tooltip) {
     marker.$el.classList.add('has-tooltip');
@@ -3331,6 +3617,20 @@ PSVHUD.prototype.removeMarker = function(marker, render) {
 };
 
 /**
+ + * Remove all markers
+ + * @param render (Boolean) "false" to disable immediate render
+ + */
+PSVHUD.prototype.clearMarkers = function(render) {
+  Object.keys(this.markers).forEach(function(marker) {
+    this.removeMarker(marker, false)
+  }, this);
+
+  if (render !== false) {
+    this.updatePositions();
+  }
+};
+
+/**
  * Go to a specific marker
  * @param marker (Mixed)
  * @param duration (Mixed, optional)
@@ -3376,7 +3676,7 @@ PSVHUD.prototype.toggleMarker = function(marker) {
  * @return (void)
  */
 PSVHUD.prototype.updatePositions = function() {
-  var rotation = this.psv.camera.rotation.z / Math.PI * 180;
+  var rotation = !this.psv.isGyroscopeEnabled() ? 0 : this.psv.camera.rotation.z / Math.PI * 180;
 
   for (var id in this.markers) {
     var marker = this.markers[id];
@@ -3602,24 +3902,22 @@ PSVHUD.prototype._onMouseMove = function(e) {
 
 /**
  * The mouse button is release : show/hide the panel if threshold was not reached, or do nothing
+ * @param data (Object)
  * @param e (Event)
  * @return (void)
  */
-PSVHUD.prototype._onClick = function(e) {
+PSVHUD.prototype._onClick = function(data, e) {
   var marker;
-  if (e.target && (marker = PSVUtils.getClosest(e.target, '.psv-marker')) && marker.psvMarker) {
+  if (data.target && (marker = PSVUtils.getClosest(data.target, '.psv-marker')) && marker.psvMarker) {
     this.currentMarker = marker.psvMarker;
     this.psv.trigger('select-marker', marker.psvMarker);
 
     if (this.psv.config.click_event_on_marker) {
       // add the marker to event data
-      e.data = {
-        marker: marker.psvMarker
-      };
+      data.marker = marker.psvMarker;
     }
     else {
-      // prevent the public "click" event
-      e.preventDefault();
+      e.stopPropagation();
     }
   }
   else if (this.currentMarker) {
@@ -3631,7 +3929,7 @@ PSVHUD.prototype._onClick = function(e) {
     this.psv.panel.showPanel(marker.psvMarker.content);
   }
   else if (this.psv.panel.prop.opened) {
-    e.preventDefault(); // prevent the public "click" event
+    e.stopPropagation();
     this.psv.panel.hidePanel();
   }
 };
@@ -3691,6 +3989,16 @@ PSVLoader.prototype.create = function() {
     inner.style.maxHeight = a + 'px';
     this.loader.appendChild(inner);
   }
+};
+
+/**
+ * Destroys the loader
+ */
+PSVLoader.prototype.destroy = function() {
+  delete this.loader;
+  delete this.canvas;
+
+  PSVComponent.prototype.destroy.call(this);
 };
 
 /**
@@ -3757,7 +4065,7 @@ PSVNavBar.prototype = Object.create(PSVComponent.prototype);
 PSVNavBar.prototype.constructor = PSVNavBar;
 
 PSVNavBar.className = 'psv-navbar open';
-PSVNavBar.publicMethods = ['showNavbar', 'hideNavbar', 'toggleNavbar'];
+PSVNavBar.publicMethods = ['showNavbar', 'hideNavbar', 'toggleNavbar', 'getNavbarButton'];
 
 /**
  * Creates the navbar
@@ -3772,28 +4080,30 @@ PSVNavBar.prototype.create = function() {
     }
     else {
       switch (button) {
-        case 'autorotate':
+        case PSVNavBarAutorotateButton.id:
           this.items.push(new PSVNavBarAutorotateButton(this));
           break;
 
-        case 'zoom':
+        case PSVNavBarZoomButton.id:
           this.items.push(new PSVNavBarZoomButton(this));
           break;
 
-        case 'download':
+        case PSVNavBarDownloadButton.id:
           this.items.push(new PSVNavBarDownloadButton(this));
           break;
 
-        case 'markers':
+        case PSVNavBarMarkersButton.id:
           this.items.push(new PSVNavBarMarkersButton(this));
           break;
 
-        case 'fullscreen':
+        case PSVNavBarFullscreenButton.id:
           this.items.push(new PSVNavBarFullscreenButton(this));
           break;
 
-        case 'gyroscope':
-          this.items.push(new PSVNavBarGyroscopeButton(this));
+        case PSVNavBarGyroscopeButton.id:
+          if (this.psv.config.gyroscope) {
+            this.items.push(new PSVNavBarGyroscopeButton(this));
+          }
           break;
 
         case 'caption':
@@ -3804,7 +4114,7 @@ PSVNavBar.prototype.create = function() {
           button = 'spacer-5';
         /* falls through */
         default:
-          var matches = button.match(/spacer\-([0-9]+)/);
+          var matches = button.match(/^spacer\-([0-9]+)$/);
           if (matches !== null) {
             this.items.push(new PSVNavBarSpacer(this, matches[1]));
           }
@@ -3825,9 +4135,32 @@ PSVNavBar.prototype.destroy = function() {
     item.destroy();
   });
 
-  this.items.length = 0;
+  delete this.items;
+  delete this.config;
 
   PSVComponent.prototype.destroy.call(this);
+};
+
+/**
+ * Returns a button by it's identifier
+ * @param id
+ * @returns (Object|null)
+ */
+PSVNavBar.prototype.getNavbarButton = function(id) {
+  var button = null;
+
+  this.items.some(function(item) {
+    if (item.id === id) {
+      button = item;
+      return true;
+    }
+  });
+
+  if (!button) {
+    console.warn('PhotoSphereViewer: button "' + id + '" not found in the navbar.');
+  }
+
+  return button;
 };
 
 /**
@@ -3893,6 +4226,8 @@ PSVNavBarCaption.prototype.setCaption = function(html) {
  */
 function PSVNavBarSpacer(navbar, weight) {
   PSVComponent.call(this, navbar);
+
+  this.weight = weight;
 
   this.create();
 
@@ -3972,6 +4307,9 @@ PSVPanel.prototype.destroy = function() {
   this.psv.container.removeEventListener('touchmove', this);
   this.psv.container.removeEventListener('mouseup', this);
   this.psv.container.removeEventListener('touchend', this);
+
+  delete this.prop;
+  delete this.content;
 
   PSVComponent.prototype.destroy.call(this);
 };
@@ -4154,6 +4492,8 @@ PSVTooltip.prototype.create = function() {
 PSVTooltip.prototype.destroy = function() {
   this.psv.off('render', this);
 
+  delete this.config;
+
   PSVComponent.prototype.destroy.call(this);
 };
 
@@ -4164,7 +4504,7 @@ PSVTooltip.prototype.destroy = function() {
 PSVTooltip.prototype.handleEvent = function(e) {
   switch (e.type) {
     // @formatter:off
-    case 'psv:render': this.hideTooltip(); break;
+    case 'render': this.hideTooltip(); break;
     // @formatter:on
   }
 };
@@ -4228,7 +4568,7 @@ PSVTooltip.prototype.showTooltip = function(config) {
   else {
     t.className = 'psv-tooltip'; // reset the class
     if (config.className) {
-      t.classList.add(config.className);
+      PSVUtils.addClasses(t, config.className);
     }
   }
 
@@ -4303,6 +4643,7 @@ PSVTooltip.prototype.hideTooltip = function() {
 
     var self = this;
     window.setTimeout(function() {
+      self.container.querySelector('.content').innerHTML = null;
       self.container.style.top = '-1000px';
       self.container.style.left = '-1000px';
     }, this.config.delay);
